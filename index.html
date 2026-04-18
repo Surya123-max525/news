@@ -159,18 +159,21 @@
             <label><span>Smoothness</span><span id="smoothnessViewer">High</span></label>
             <input type="range" min="1" max="10" value="3" oninput="setSmoothness(this.value)" />
           </div>
-          <div style="display:flex; flex-direction:column; gap:0.3rem;">
+          <div style="display:grid; grid-template-columns:auto auto; gap:0.4rem; font-size:0.75rem;">
              <label class="checkbox-wrap">
-               <input type="checkbox" id="neonGlow" onchange="toggleNeon(this.checked)"/> ✨ Neon Glow
+               <input type="checkbox" id="neonGlow" onchange="toggleNeon(this.checked)"/> ✨ Neon
              </label>
              <label class="checkbox-wrap">
-               <input type="checkbox" id="rgbMode" onchange="toggleRgb(this.checked)"/> 🌈 RGB Mode
+               <input type="checkbox" id="rgbMode" onchange="toggleRgb(this.checked)"/> 🌈 RGB
              </label>
              <label class="checkbox-wrap">
+               <input type="checkbox" id="straightLine" onchange="toggleStraightLine(this.checked)"/> 📏 Straight
+             </label>
+             <label class="checkbox-wrap">
+               <input type="checkbox" id="dashedLine" onchange="toggleDash(this.checked)"/> ➖ Dash
+             </label>
+             <label class="checkbox-wrap" style="grid-column: span 2;">
                <input type="checkbox" id="showFingers" onchange="toggleFingers(this.checked)"/> 🖐️ Show Fingers
-             </label>
-             <label class="checkbox-wrap">
-               <input type="checkbox" id="dashedLine" onchange="toggleDash(this.checked)"/> ➖ Dashed Line
              </label>
           </div>
         </div>
@@ -239,9 +242,10 @@
     let neonEnabled = false;
     let dashEnabled = false;
     let rgbEnabled = false;
+    let straightLine = false;
     let mirrorCamera = true;
     
-    let paths = []; // Stores all drawing paths: { color, thickness, isEraser, neon, dash, rgb, startHue, points: [{x,y}] }
+    let paths = []; // Stores all drawing paths: { color, thickness, isEraser, neon, dash, lineMode, rgb, startHue, points: [{x,y}] }
     let currentPath = null;
     let smoothX = 0, smoothY = 0;
     let alpha = 0.3; // Smoothing factor
@@ -297,6 +301,7 @@
     function toggleNeon(isEnabled) { neonEnabled = isEnabled; }
     function toggleRgb(isEnabled) { rgbEnabled = isEnabled; }
     function toggleDash(isEnabled) { dashEnabled = isEnabled; }
+    function toggleStraightLine(isEnabled) { straightLine = isEnabled; }
     function toggleFingers(isEnabled) {
       document.getElementById('fingerCountBadge').style.display = isEnabled ? 'block' : 'none';
     }
@@ -416,15 +421,27 @@
         if (isDrawing) {
           lostFrames = 0;
           if (!currentPath) {
-            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, rgb: rgbEnabled, startHue: rainbowHue, points: [] };
+            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, lineMode: straightLine, rgb: rgbEnabled, startHue: rainbowHue, points: [] };
             paths.push(currentPath);
+            currentPath.points.push({x: smoothX, y: smoothY});
           }
            // Break path if properties changed mid-draw
-          else if (currentPath.color !== currentColor || currentPath.thickness !== brushThickness || currentPath.isEraser !== isEraser || currentPath.neon !== neonEnabled || currentPath.dash !== dashEnabled || currentPath.rgb !== rgbEnabled) {
-            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, rgb: rgbEnabled, startHue: rainbowHue, points: [] };
+          else if (currentPath.color !== currentColor || currentPath.thickness !== brushThickness || currentPath.isEraser !== isEraser || currentPath.neon !== neonEnabled || currentPath.dash !== dashEnabled || currentPath.rgb !== rgbEnabled || currentPath.lineMode !== straightLine) {
+            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, lineMode: straightLine, rgb: rgbEnabled, startHue: rainbowHue, points: [] };
             paths.push(currentPath);
+            currentPath.points.push({x: smoothX, y: smoothY});
           }
-          currentPath.points.push({x: smoothX, y: smoothY});
+          
+          if(currentPath.lineMode) {
+             if(currentPath.points.length > 1) {
+               currentPath.points[1] = {x: smoothX, y: smoothY}; // Overwrite end point for perfectly straight line
+             } else {
+               currentPath.points.push({x: smoothX, y: smoothY});
+             }
+          } else {
+             currentPath.points.push({x: smoothX, y: smoothY});
+          }
+          
           if(rgbEnabled) rainbowHue += 5;
         } else {
           currentPath = null;
