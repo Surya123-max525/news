@@ -127,6 +127,17 @@
             <span>Thickness</span><span id="brushSizeViewer">6px</span>
           </label>
           <input type="range" min="2" max="60" value="6" oninput="setThickness(this.value)" />
+          <div style="margin-top: 1rem; display:flex; align-items:center; gap: 0.5rem; cursor:pointer;">
+            <input type="checkbox" id="neonGlow" onchange="toggleNeon(this.checked)" style="width:auto; accent-color:var(--primary);"/>
+            <label for="neonGlow" style="font-size: 0.8rem; color: #94A3B8; cursor:pointer; font-weight:600;">✨ Enable Neon Glow</label>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title">Draw Gesture</div>
+        <div class="bg-segment" id="gesture-segment" style="margin-top:0;">
+          <button class="bg-btn active" onclick="setGesture('index', this)">Index Up</button>
+          <button class="bg-btn" onclick="setGesture('pinch', this)">Pinch Mode</button>
         </div>
       </div>
       <div>
@@ -140,6 +151,9 @@
       <div>
         <div class="section-title">Actions</div>
         <div style="display:flex; flex-direction: column; gap:1rem;">
+          <button class="action-btn" onclick="undoPath()" style="background: rgba(255, 255, 255, 0.1);">
+            <span style="font-size:1.2rem;">↩️</span> Undo Last Stroke
+          </button>
           <button class="action-btn" onclick="setColor('eraser', this)">
             <span style="font-size:1.2rem;">🧽</span> Eraser Mode
           </button>
@@ -169,7 +183,9 @@
     let isEraser = false;
     let brushThickness = 6;
     let bgMode = 'camera'; 
-    let paths = []; // Stores all drawing paths: { color, thickness, isEraser, points: [{x,y}] }
+    let drawGesture = 'index';
+    let neonEnabled = false;
+    let paths = []; // Stores all drawing paths: { color, thickness, isEraser, neon, points: [{x,y}] }
     let currentPath = null;
     let smoothX = 0, smoothY = 0;
     const alpha = 0.3; // Smoothing factor
@@ -202,9 +218,24 @@
       document.querySelectorAll('.bg-btn').forEach(b => b.classList.remove('active'));
       if(btn) btn.classList.add('active');
     }
+    function setGesture(gesture, btn) {
+      drawGesture = gesture;
+      const seg = document.getElementById('gesture-segment');
+      seg.querySelectorAll('.bg-btn').forEach(b => b.classList.remove('active'));
+      if(btn) btn.classList.add('active');
+    }
+    function toggleNeon(isEnabled) {
+      neonEnabled = isEnabled;
+    }
     function clearCanvas() {
       paths = [];
       currentPath = null;
+    }
+    function undoPath() {
+      if(paths.length > 0) {
+        paths.pop();
+        currentPath = null;
+      }
     }
     function saveImage() {
       // Temporarily remove transform mirror to save normal image
@@ -265,18 +296,37 @@
 
         let totalFingers = [indexUp, middleUp, ringUp, pinkyUp, thumbUp].filter(x => x).length;
 
-        if (indexUp && !middleUp) isDrawing = true;
-        if (totalFingers === 5) clearStance = true;
+        // Calculate distance for pinch
+        let dx = landmarks[8].x - landmarks[4].x;
+        let dy = landmarks[8].y - landmarks[4].y;
+        let pinchDist = Math.sqrt(dx*dx + dy*dy);
+
+        if (drawGesture === 'index') {
+          if (indexUp && !middleUp) isDrawing = true;
+        } else if (drawGesture === 'pinch') {
+          if (pinchDist < 0.06) isDrawing = true;
+          // Smooth coords using the middle point of pinch for better accuracy
+          let midX = (landmarks[8].x + landmarks[4].x) / 2 * canvasElement.width;
+          let midY = (landmarks[8].y + landmarks[4].y) / 2 * canvasElement.height;
+          if (lostFrames <= 3 && currentPath !== null) {
+            smoothX = alpha * midX + (1 - alpha) * smoothX;
+            smoothY = alpha * midY + (1 - alpha) * smoothY;
+          } else {
+            smoothX = midX; smoothY = midY;
+          }
+        }
+
+        if (totalFingers === 5 && pinchDist > 0.1) clearStance = true;
 
         if (isDrawing) {
           lostFrames = 0;
           if (!currentPath) {
-            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, points: [] };
+            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, points: [] };
             paths.push(currentPath);
           }
            // if properties changed mid-draw, break path
-          else if (currentPath.color !== currentColor || currentPath.thickness !== brushThickness || currentPath.isEraser !== isEraser) {
-            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, points: [] };
+          else if (currentPath.color !== currentColor || currentPath.thickness !== brushThickness || currentPath.isEraser !== isEraser || currentPath.neon !== neonEnabled) {
+            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, points: [] };
             paths.push(currentPath);
           }
           currentPath.points.push({x: smoothX, y: smoothY});
@@ -303,6 +353,7 @@
         if (p.isEraser) {
           // Eraser logic uses 'destination-out' to clear transparency (useful if camera mode) 
           // or draws bg_color (if black/white)
+          canvasCtx.shadowBlur = 0;
           if (bgMode === 'camera') {
             canvasCtx.globalCompositeOperation = 'destination-out';
             canvasCtx.strokeStyle = 'rgba(0,0,0,1)';
@@ -315,6 +366,14 @@
           canvasCtx.globalCompositeOperation = 'source-over';
           canvasCtx.strokeStyle = p.color;
           canvasCtx.lineWidth = p.thickness;
+          
+          if (p.neon) {
+            canvasCtx.shadowBlur = 15;
+            canvasCtx.shadowColor = p.color;
+          } else {
+            canvasCtx.shadowBlur = 0;
+            canvasCtx.shadowColor = 'transparent';
+          }
         }
 
         canvasCtx.beginPath();
