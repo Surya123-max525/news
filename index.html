@@ -24,20 +24,16 @@
       color: var(--text); display: flex; flex-direction: column;
       height: 100vh; overflow: hidden;
     }
-    nav {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 1rem 3rem; background: rgba(15, 23, 42, 0.6);
-      backdrop-filter: blur(12px); border-bottom: 1px solid var(--glass-border); z-index: 10;
-    }
     .logo {
-      font-size: 1.5rem; font-weight: 700;
-      background: linear-gradient(135deg, #818CF8, #C084FC);
+      font-size: 1.2rem; font-weight: 800;
+      background: linear-gradient(135deg, #00FF87, #60EFFF);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      letter-spacing: 1px;
+      letter-spacing: 1px; flex-shrink: 0; padding-right: 1.5rem;
+      border-right: 1px solid rgba(255,255,255,0.1); margin-right: -0.5rem;
     }
     .container {
-      display: flex; flex-direction: column; flex: 1; gap: 1rem; padding: 1.5rem;
-      height: calc(100vh - 70px); box-sizing: border-box;
+      display: flex; flex-direction: column; flex: 1; gap: 1rem; padding: 1rem;
+      height: 100vh; box-sizing: border-box;
     }
     
     /* Top Toolbar Styling */
@@ -126,11 +122,10 @@
   </style>
 </head>
 <body>
-  <nav><div class="logo">AuraDraw Web ✨</div></nav>
-  
   <div class="container">
     <!-- Top Toolbar -->
-    <div class="toolbar">
+    <div class="toolbar" style="border-top: 2px solid rgba(96,239,255,0.4);">
+      <div class="logo">AuraDraw ✨</div>
       
       <!-- Colors Group -->
       <div class="toolbar-group">
@@ -167,6 +162,12 @@
           <div style="display:flex; flex-direction:column; gap:0.3rem;">
              <label class="checkbox-wrap">
                <input type="checkbox" id="neonGlow" onchange="toggleNeon(this.checked)"/> ✨ Neon Glow
+             </label>
+             <label class="checkbox-wrap">
+               <input type="checkbox" id="rgbMode" onchange="toggleRgb(this.checked)"/> 🌈 RGB Mode
+             </label>
+             <label class="checkbox-wrap">
+               <input type="checkbox" id="showFingers" onchange="toggleFingers(this.checked)"/> 🖐️ Show Fingers
              </label>
              <label class="checkbox-wrap">
                <input type="checkbox" id="dashedLine" onchange="toggleDash(this.checked)"/> ➖ Dashed Line
@@ -218,6 +219,9 @@
       <div class="status-badge" id="status-badge">
         <div class="pulse"></div> Waiting for Camera...
       </div>
+      <div id="fingerCountBadge" style="position:absolute; top:1.5rem; left:1.5rem; background:rgba(0,0,0,0.6); padding:0.5rem 1rem; border-radius:12px; font-weight:bold; display:none; border: 1px solid rgba(255,255,255,0.2); z-index: 10;">
+        Fingers: <span id="fingerCountText">0</span>
+      </div>
       <video class="input_video"></video>
       <canvas class="output_canvas" id="main-canvas" width="1280" height="720"></canvas>
     </div>
@@ -234,13 +238,15 @@
     let drawGesture = 'index';
     let neonEnabled = false;
     let dashEnabled = false;
+    let rgbEnabled = false;
     let mirrorCamera = true;
     
-    let paths = []; // Stores all drawing paths: { color, thickness, isEraser, neon, dash, points: [{x,y}] }
+    let paths = []; // Stores all drawing paths: { color, thickness, isEraser, neon, dash, rgb, startHue, points: [{x,y}] }
     let currentPath = null;
     let smoothX = 0, smoothY = 0;
     let alpha = 0.3; // Smoothing factor
     let lostFrames = 0;
+    let rainbowHue = 0;
 
     // --- DOM Elements ---
     const videoElement = document.querySelector('.input_video');
@@ -289,7 +295,11 @@
       if(btn) btn.classList.add('active');
     }
     function toggleNeon(isEnabled) { neonEnabled = isEnabled; }
+    function toggleRgb(isEnabled) { rgbEnabled = isEnabled; }
     function toggleDash(isEnabled) { dashEnabled = isEnabled; }
+    function toggleFingers(isEnabled) {
+      document.getElementById('fingerCountBadge').style.display = isEnabled ? 'block' : 'none';
+    }
     
     function toggleMirror() {
       mirrorCamera = !mirrorCamera;
@@ -379,6 +389,7 @@
         let thumbUp = landmarks[4].y < landmarks[2].y;
 
         let totalFingers = [indexUp, middleUp, ringUp, pinkyUp, thumbUp].filter(x => x).length;
+        document.getElementById('fingerCountText').innerText = totalFingers;
 
         // Calculate distance for pinch
         let dx = landmarks[8].x - landmarks[4].x;
@@ -405,15 +416,16 @@
         if (isDrawing) {
           lostFrames = 0;
           if (!currentPath) {
-            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, points: [] };
+            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, rgb: rgbEnabled, startHue: rainbowHue, points: [] };
             paths.push(currentPath);
           }
            // Break path if properties changed mid-draw
-          else if (currentPath.color !== currentColor || currentPath.thickness !== brushThickness || currentPath.isEraser !== isEraser || currentPath.neon !== neonEnabled || currentPath.dash !== dashEnabled) {
-            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, points: [] };
+          else if (currentPath.color !== currentColor || currentPath.thickness !== brushThickness || currentPath.isEraser !== isEraser || currentPath.neon !== neonEnabled || currentPath.dash !== dashEnabled || currentPath.rgb !== rgbEnabled) {
+            currentPath = { color: currentColor, thickness: brushThickness, isEraser: isEraser, neon: neonEnabled, dash: dashEnabled, rgb: rgbEnabled, startHue: rainbowHue, points: [] };
             paths.push(currentPath);
           }
           currentPath.points.push({x: smoothX, y: smoothY});
+          if(rgbEnabled) rainbowHue += 5;
         } else {
           currentPath = null;
           lostFrames++;
@@ -452,24 +464,35 @@
           canvasCtx.lineWidth = p.thickness * 4; 
         } else {
           canvasCtx.globalCompositeOperation = 'source-over';
-          canvasCtx.strokeStyle = p.color;
           canvasCtx.lineWidth = p.thickness;
+          if(!p.rgb) canvasCtx.strokeStyle = p.color;
           
           if (p.neon) {
             canvasCtx.shadowBlur = 15;
-            canvasCtx.shadowColor = p.color;
+            canvasCtx.shadowColor = p.rgb ? `hsl(${p.startHue}, 100%, 50%)` : p.color;
           } else {
             canvasCtx.shadowBlur = 0;
             canvasCtx.shadowColor = 'transparent';
           }
         }
 
-        canvasCtx.beginPath();
-        canvasCtx.moveTo(p.points[0].x, p.points[0].y);
-        for(let i=1; i<p.points.length; i++) {
-          canvasCtx.lineTo(p.points[i].x, p.points[i].y);
+        if(p.rgb && !p.isEraser && p.points.length > 1) {
+           for(let i=1; i<p.points.length; i++) {
+              canvasCtx.beginPath();
+              canvasCtx.moveTo(p.points[i-1].x, p.points[i-1].y);
+              canvasCtx.lineTo(p.points[i].x, p.points[i].y);
+              canvasCtx.strokeStyle = `hsl(${(p.startHue + (i*5)) % 360}, 100%, 50%)`;
+              if (p.neon) canvasCtx.shadowColor = canvasCtx.strokeStyle;
+              canvasCtx.stroke();
+           }
+        } else {
+           canvasCtx.beginPath();
+           canvasCtx.moveTo(p.points[0].x, p.points[0].y);
+           for(let i=1; i<p.points.length; i++) {
+             canvasCtx.lineTo(p.points[i].x, p.points[i].y);
+           }
+           canvasCtx.stroke();
         }
-        canvasCtx.stroke();
       }
       
       canvasCtx.setLineDash([]); // cleanup dash
